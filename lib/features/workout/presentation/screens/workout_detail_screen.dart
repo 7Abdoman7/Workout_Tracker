@@ -123,12 +123,18 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     );
   }
 
+// Update the _showAddEditExerciseDialog method in WorkoutDetailScreen
+
   void _showAddEditExerciseDialog(BuildContext context, [Exercise? exercise]) async {
     final workoutBloc = context.read<WorkoutBloc>(); // Get bloc before await
 
     final newExercise = await showDialog<Exercise>(
       context: context,
-      builder: (context) => ExerciseFormDialog(exercise: exercise),
+      builder: (context) => ExerciseFormDialog(
+        exercise: exercise,
+        userId: widget.userId,
+        workoutId: widget.workout.id!,
+      ),
     );
 
     if (newExercise != null) {
@@ -136,14 +142,14 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
 
       if (exercise == null) {
         workoutBloc.add(AddExercise(
-              newExercise.copyWith(workoutId: widget.workout.id!),
-              widget.userId,
-            ));
+          newExercise,
+          widget.userId,
+        ));
       } else {
         workoutBloc.add(UpdateExercise(
-              newExercise.copyWith(id: exercise.id, workoutId: widget.workout.id!),
-              widget.userId,
-            ));
+          newExercise.copyWith(id: exercise.id),
+          widget.userId,
+        ));
       }
     }
   }

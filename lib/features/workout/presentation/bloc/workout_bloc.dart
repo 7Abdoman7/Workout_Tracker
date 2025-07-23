@@ -1,4 +1,3 @@
-
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:workout_tracker/features/workout/domain/repositories/workout_repository.dart';
 import 'package:workout_tracker/features/workout/presentation/bloc/workout_event.dart';
@@ -104,8 +103,22 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   void _onDeleteExercise(DeleteExercise event, Emitter<WorkoutState> emit) async {
     try {
       await workoutRepository.deleteExercise(event.exerciseId);
-      final workouts = await workoutRepository.getWorkouts(event.userId);
-      emit(WorkoutLoaded(workouts));
+      if (state is WorkoutLoaded) {
+        final currentWorkouts = (state as WorkoutLoaded).workouts;
+        final updatedWorkouts = currentWorkouts.map((workout) {
+          if (workout.id == event.workoutId) {
+            final updatedExercises = workout.exercises
+                .where((exercise) => exercise.id != event.exerciseId)
+                .toList();
+            return workout.copyWith(exercises: updatedExercises);
+          }
+          return workout;
+        }).toList();
+        emit(WorkoutLoaded(updatedWorkouts));
+      } else {
+        final workouts = await workoutRepository.getWorkouts(event.userId);
+        emit(WorkoutLoaded(workouts));
+      }
     } catch (e) {
       emit(WorkoutError(e.toString()));
     }
