@@ -1,4 +1,3 @@
-
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:workout_tracker/models/exercise_model.dart';
@@ -25,7 +24,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'workout_tracker.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3, // Increment version to trigger migration
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -53,11 +52,13 @@ class DatabaseHelper {
       CREATE TABLE exercises(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         workout_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         rest_time_minutes INTEGER NOT NULL,
         rest_time_seconds INTEGER NOT NULL,
         exercise_order INTEGER,
-        FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
+        FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     ''');
 
@@ -127,6 +128,42 @@ class DatabaseHelper {
           rir INTEGER,
           FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
         )''');
+    }
+
+    if (oldVersion < 3) {
+      // Add user_id column to exercises table
+      await db.execute('ALTER TABLE exercises ADD COLUMN user_id INTEGER');
+
+      // Update existing exercises with user_id from their workouts
+      await db.execute('''
+        UPDATE exercises SET user_id = (
+          SELECT workouts.user_id 
+          FROM workouts 
+          WHERE workouts.id = exercises.workout_id
+        )
+      ''');
+
+      // Make user_id NOT NULL and add foreign key constraint
+      await db.execute('''
+        CREATE TABLE exercises_new(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          workout_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          rest_time_minutes INTEGER NOT NULL,
+          rest_time_seconds INTEGER NOT NULL,
+          exercise_order INTEGER,
+          FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''');
+
+      await db.execute('''
+        INSERT INTO exercises_new (id, workout_id, user_id, name, rest_time_minutes, rest_time_seconds, exercise_order)
+        SELECT id, workout_id, user_id, name, rest_time_minutes, rest_time_seconds, exercise_order FROM exercises
+      ''');
+
+      await db.execute('DROP TABLE exercises');
+      await db.execute('ALTER TABLE exercises_new RENAME TO exercises');
     }
   }
 
@@ -204,6 +241,25 @@ class DatabaseHelper {
       'exercises',
       where: 'workout_id = ?',
       whereArgs: [workoutId],
+      orderBy: 'exercise_order ASC',
+    );
+
+    List<Exercise> exercises = [];
+    for (var exerciseMap in exerciseMaps) {
+      final exercise = Exercise.fromMap(exerciseMap);
+      final sets = await getExerciseSetsForExercise(exercise.id!);
+      exercises.add(exercise.copyWith(sets: sets));
+    }
+    return exercises;
+  }
+
+  // New method to get exercises by user_id
+  Future<List<Exercise>> getExercisesByUser(int userId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> exerciseMaps = await db.query(
+      'exercises',
+      where: 'user_id = ?',
+      whereArgs: [userId],
       orderBy: 'exercise_order ASC',
     );
 
